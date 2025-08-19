@@ -6,9 +6,4 @@ search: false
 
 @import "minimal-mistakes/skins/{{ site.minimal_mistakes_skin | default: 'default' }}"; // skin
 @import "minimal-mistakes";
-// @import "custom-post";
-
-.page__content {
-  font-size: 18px !important;
-  line-height: 1.6 !important;
-}
+@import "custom-post";
