@@ -115,8 +115,8 @@ analytics:
 author:
   name             : "culyrh"
   avatar           : # path of avatar image, e.g. "/assets/images/bio-photo.jpg"
-  bio              : "Hello !"
-  location         : "student at JBNU"
+  bio              : ""
+  location         : "JBNU"
   email            :
   links:
     - label: "Email"
