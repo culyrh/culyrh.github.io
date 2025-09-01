@@ -1,6 +1,6 @@
 ---
 layout: single        # 레이아웃 지정
-title: "TEST"
+title: "S3 파일 업로드 (Multipart Upload + Presigned URL)"
 custom_css: custom-post
 date: 2025-09-02 06:00:00
 categories: []  # 카테고리
