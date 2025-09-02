@@ -4,7 +4,7 @@ title: "S3 파일 업로드 (Multipart Upload + Presigned URL)"
 custom_css: custom-post
 date: 2025-09-02 00:00:00
 categories: []  # 카테고리
-tags: [S3]                 # 태그
+tags: []                 # 태그
 ---
 
 ## MultipartFile 업로드
