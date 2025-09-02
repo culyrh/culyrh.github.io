@@ -9,9 +9,58 @@ tags: [S3]                 # 태그
 
 ## MultipartFile 업로드
 
-pring에서 제공하는 MultipartFile 인터페이스를 이용하여 파일을 업로드하는 방식입니다. 이 인터페이스는 파일의 이름, 크기, 내용과 같은 업로드된 파일의 내용에 액세스하는 방법을 제공합니다. MultipartFile은 Stream 업로드에 비해 더 높은 수준의 추상화와 편의성을 제공
 
-- MultipartFile 업로드 설정
+### 개념
+
+spring에서 제공하는 MultipartFile 인터페이스를 이용하여 파일을 업로드하는 방식입니다. **큰 파일(또는 불안정한 네트워크 환경)에서 파일을 작은 조각으로 나눠 각각 업로드한 뒤, 마지막에 조각들을 합쳐서 하나의 객체로 완성합니다.**
+
+MultipartFile Upload는 다음과 같은 이점을 가집니다.
+
+- 병렬 업로드로 속도 향상
+
+- 전송 실패 시 해당 파트만 재전송하므로 재개(resume)가 쉬움
+(네트워크가 불안정한 환경에 적합)
+  - 미완료된 파트의 경우 저장 비용이 발생할 수 있으므로 업로드 정리 필요
+
+- 메모리/타임아웃 이슈 완화(스트리밍 방식으로 처리 가능)
+
+![](https://velog.velcdn.com/images/rkz788/post/33099170-3557-4f43-8e6c-5072e203d1fa/image.png)
+
+<br>
+
+### 동작 흐름 (S3)
+
+**1. Initiate (업로드 시작)**
+
+- 서버(또는 클라이언트 SDK)가 **InitiateMultipartUpload** 호출 
+→ 업로드를 식별할 수 있는 `uploadId(or upload session id)`를 받음.
+
+**2. Upload Parts (각 파트 업로드)**
+
+- 각 파트를 UploadPart API로 보낼 때 `uploadId`와 `partNumber(1,2,3...)`를 같이 보냄.
+
+- 각 파트 업로드 성공시 서비스는 `ETag(또는 파트 체크섬)`을 반환함.
+
+**3. List Parts (선택적)**
+
+- 필요하면 ListParts로 현재 업로드된 파트 목록과 상태를 확인.
+
+**4. Complete (완료 요청)**
+
+- 모든 파트를 업로드하면 **CompleteMultipartUpload** 를 호출
+→ 이 때 서비스에 `partNumber + ETag` 목록을 전송하면, 서비스가 지정된 순서(주로 partNumber 순서)대로 조립해 최종 객체를 만듬.
+
+**5. Abort (중단/취소)**
+
+- 업로드 도중 중단하거나 실패 시 **AbortMultipartUpload** 를 호출하여 업로드된 파트들을 정리(삭제)하고 비용/리소스 낭비를 막음.
+  - 단, 한번 취소된 `Upload ID`로 다시 파트를 업로드할 수 없음.
+
+<br>
+
+### MultipartFile 업로드 설정
+
+- 아래와 같은 설정으로 MultipartFile 업로드 방식을 사용합니다.
+
 ```java
 spring:
   servlet:
@@ -22,12 +71,15 @@ spring:
       max-file-size: 100MB # 한개 파일의 최대 사이즈 (default: 1MB)
       max-request-size: 100MB # 한개 요청의 최대 사이즈 (default: 10MB)
 ```
+- 업로드된 파일의 크기가 `file-size-threshold` 값 보다 크다면, **임시 디렉토리(location)**로 디스크에 저장됩니다.
+  - 임시 디렉토리에 저장된 파일은 힙 메모리가 아닌 **Servlet에 저장**됩니다. 
+  - 업로드 중 장애가 발생한 경우, 이 파일은 Servlet 컨테이너(Tomcat 등)가 자동으로 정리하거나, spring이 cleanup() 과정에서 삭제 처리합니다.
 
-클라이언트가 파일을 업로드했을 때 WAS(Tomcat)가 해당 파일을 임시 디렉터리(location)에 저장합니다. 여기서 임시 디렉터리에 저장된 파일은 힙 메모리에 올라가는 것이 아닌 Servlet Container Disk(컨테이너가 실행되고 있는 서버의 디스크)에 저장됨을 의미합니다. 요청 처리가 끝나면 임시 저장된 파일이 삭제됩니다. 하지만 업로드 중 배포가 되었다든지, 장애가 발생했다든지 등 가끔 삭제되지 않고 남아있을 수 있습니다. 그럴 경우에 삭제 작업을 별도로 해야 하기 때문에 작업과 관리가 용이하도록 경로를 직접 설정해 주는 것이 좋습니다. 또한 Spring은 임시 디렉터리에 저장된 파일을 MultipartFile 변수에 매핑함으로써 업로드된 파일의 바이너리를 힙 메모리에 할당하지 않고 해당 콘텐츠 메타데이터에 액세스할 수 있습니다.
-
-
-즉 업로드된 파일의 크기가 fize-size-threshold 값 이하라면 WAS가 임시파일을 생성하지 않고 파일 바이너리를 메모리에 다이렉트로 할당하게 됩니다. 파일 처리 속도는 더 빠르겠지만, 스레드가 작업을 수행하는 동안 부담이 될 수 있기 때문에 충분한 검토가 필요합니다. 만약 파일 크기가 fize-size-threshold 값을 초과한다면 파일은 location 경로에 저장되고 Spring에서 필요할 때 해당 파일을 읽어 작업할 수 있습니다.
-
+- 파일의 크기가 `file-size-threshold` 이하라면, WAS가 임시파일을 생성하지 않고 파일 바이너리를 **메모리(바이트 배열 버퍼)**에 다이렉트로 할당합니다.
+  - 이 경우, 파일 처리 속도는 더 빠르지만 스레드가 작업을 수행하는 동안 부담이 될 수 있기 때문에 충분한 검토가 필요합니다.
+  - 메모리에 저장된 업로드 데이터는 업로드 실패 시 곧바로 참조 해제되고, GC에 의해 정리됩니다.
+  
+  
 
 Stream 업로드 및 MultipartFile 업로드 방식을 사용할 때 다수의 사용자로부터 동시에 요청이 들어올 경우, 서버의 스레드가 빠르게 소진될 위험이 있습니다. 이에 따라 스레드 풀 설정이 적절하지 않으면 스레드 고갈로 인해 타임아웃이 발생할 위험이 있습니다.
 
@@ -35,7 +87,7 @@ Stream 업로드 및 MultipartFile 업로드 방식을 사용할 때 다수의 �
 
 <br>
 
-## AWS Multipart
+## AWS Multipart + Presigned URL
 
 
 ![](https://velog.velcdn.com/images/rkz788/post/d813ba02-53d6-4099-843d-76623034d187/image.png)
