@@ -2,7 +2,7 @@
 layout: single        # 레이아웃 지정
 title: "S3 파일 업로드 (Multipart Upload + Presigned URL)"
 custom_css: custom-post
-date: 2025-09-02 06:00:00
+date: 2025-09-02 00:00:00
 categories: []  # 카테고리
 tags: [S3]                 # 태그
 ---
